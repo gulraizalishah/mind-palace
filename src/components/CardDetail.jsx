@@ -1,4 +1,3 @@
-import { useEffect } from 'react'
 import { colorsFor } from '../lib/theme'
 import SaveButton from './SaveButton'
 import Sticker from './Sticker'
@@ -6,12 +5,6 @@ import Sticker from './Sticker'
 // Everything about one card: image, full text, source, tags.
 export default function CardDetail({ card, category, savedRoom, onSave, onClose }) {
   const [c1, c2] = colorsFor(category?.name)
-  useEffect(() => {
-    const onKey = (e) => e.key === 'Escape' && onClose()
-    document.addEventListener('keydown', onKey)
-    return () => document.removeEventListener('keydown', onKey)
-  }, [onClose])
-
   return (
     <div className="modal" onClick={onClose}>
       <div className="card sheet detail" role="dialog" aria-modal="true" aria-label={card.title} onClick={(e) => e.stopPropagation()}>

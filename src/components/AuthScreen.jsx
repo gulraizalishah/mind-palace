@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { signIn, signUp, resetPassword } from '../services/auth'
 
-export default function AuthScreen() {
+// Login / sign-up form. `embedded` = shown inside a pop-up instead of as a full page.
+export default function AuthScreen({ embedded = false }) {
   const [mode, setMode] = useState('login')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -26,10 +27,12 @@ export default function AuthScreen() {
     try { await resetPassword(email); setMsg('Password reset email sent.') } catch (err) { setMsg(err.message) }
   }
 
-  return (
-    <main className="auth">
-      <h1 className="big">Mind Palace</h1>
-      <p className="sub">Learn useful things. Keep them forever.</p>
+  const body = (
+    <>
+      {!embedded && (<>
+        <h1 className="big">Mind Palace</h1>
+        <p className="sub">Learn useful things. Keep them forever.</p>
+      </>)}
       <form onSubmit={submit}>
         <label>Email<input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" /></label>
         <label>Password<input type="password" required minLength={6} value={password} onChange={(e) => setPassword(e.target.value)} autoComplete={mode === 'login' ? 'current-password' : 'new-password'} /></label>
@@ -42,6 +45,7 @@ export default function AuthScreen() {
         </button>
         {mode === 'login' && <button className="link" onClick={forgot}>Forgot password</button>}
       </p>
-    </main>
+    </>
   )
+  return embedded ? body : <main className="auth">{body}</main>
 }

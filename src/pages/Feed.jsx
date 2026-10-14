@@ -5,6 +5,8 @@ import KnowledgeCard from '../components/KnowledgeCard'
 import PlaceSheet from '../components/PlaceSheet'
 import CardDetail from '../components/CardDetail'
 import { useStreak } from '../hooks/useStreak'
+import { useAuth } from '../hooks/useAuth'
+import { useAuthPrompt } from '../hooks/useAuthPrompt'
 
 // Keeps neighbouring cards from sharing a category where possible.
 function spread(rows, prev) {
@@ -15,6 +17,8 @@ function spread(rows, prev) {
 
 export default function Feed({ categories, rooms, categoryId }) {
   const { touch } = useStreak()
+  const { user } = useAuth()
+  const { askLogin } = useAuthPrompt()
   const lastCat = useRef(null)
   const viewed = useRef(0)
   const [cards, setCards] = useState([])
@@ -28,6 +32,8 @@ export default function Feed({ categories, rooms, categoryId }) {
   const busy = useRef(false)
   const finished = useRef(false)
   const seen = useRef(new Set())
+  const userRef = useRef(user)
+  userRef.current = user
   const sentinel = useRef(null)
 
   const load = useCallback(async () => {
@@ -49,8 +55,12 @@ export default function Feed({ categories, rooms, categoryId }) {
 
   useEffect(() => {
     load()
-    fetchSaved().then((rows) => setSaved(Object.fromEntries(rows.map((r) => [r.card_id, r.room_id]))))
   }, [load])
+
+  useEffect(() => {
+    if (!user) { setSaved({}); return }
+    fetchSaved().then((rows) => setSaved(Object.fromEntries(rows.filter((r) => r.card_id).map((r) => [r.card_id, r.room_id])))).catch(() => {})
+  }, [user?.id])
 
   // Load the next page when the bottom marker scrolls into view.
   useEffect(() => {
@@ -63,14 +73,15 @@ export default function Feed({ categories, rooms, categoryId }) {
 
   // Views are sent in one batch when you leave the feed, so the order stays stable while you scroll.
   useEffect(() => {
-    const flush = () => { const ids = [...seen.current]; seen.current.clear(); logViews(ids) }
+    const flush = () => { const ids = [...seen.current]; seen.current.clear(); if (userRef.current) logViews(ids) }
     const onHide = () => document.visibilityState === 'hidden' && flush()
     document.addEventListener('visibilitychange', onHide)
     return () => { document.removeEventListener('visibilitychange', onHide); flush() }
   }, [])
 
-  const onSeen = useCallback((id) => { seen.current.add(id); viewed.current += 1; if (viewed.current === 5) touch() }, [touch])
-  const openCard = (c) => { setDetail(c); logEvent('card_opened', c.id) }
+  const onSeen = useCallback((id) => { seen.current.add(id); viewed.current += 1; if (viewed.current === 5 && userRef.current) touch() }, [touch])
+  const openCard = (c) => { setDetail(c); if (user) logEvent('card_opened', c.id) }
+  const requestSave = (c) => { if (!user) return askLogin('Log in to save this to your palace'); setSheet(c) }
   const closeDetail = useCallback(() => setDetail(null), [])
   const catOf = (id) => categories.find((c) => c.id === id)
   const roomOf = (id) => rooms.find((r) => r.id === id)
@@ -94,11 +105,11 @@ export default function Feed({ categories, rooms, categoryId }) {
       {status === 'done' && cards.length === 0 && <p className="sub">No published cards yet. In Supabase, run: update knowledge_cards set status = 'published' where status = 'draft';</p>}
       {cards.map((c) => (
         <KnowledgeCard key={c.id} card={c} category={catOf(c.category_id)} savedRoom={roomOf(saved[c.id])?.name}
-          onSeen={onSeen} onSave={setSheet} onOpen={openCard} />
+          onSeen={onSeen} onSave={requestSave} onOpen={openCard} />
       ))}
       <div ref={sentinel} aria-hidden="true" style={{ height: 1 }} />
       {status === 'done' && cards.length > 0 && <p className="sub" style={{ textAlign: 'center' }}>You're all caught up.</p>}
-      {detail && <CardDetail card={detail} category={catOf(detail.category_id)} savedRoom={roomOf(saved[detail.id])?.name} onSave={setSheet} onClose={closeDetail} />}
+      {detail && <CardDetail card={detail} category={catOf(detail.category_id)} savedRoom={roomOf(saved[detail.id])?.name} onSave={requestSave} onClose={closeDetail} />}
       {sheet && <PlaceSheet title="Save to your palace" subtitle={sheet.title} rooms={rooms} suggestedId={sheet.default_room_id} emoji={catOf(sheet.category_id)?.icon} onPick={pick} onClose={() => setSheet(null)} />}
       <div id="toast" className={toast ? 'on' : ''} role="status" aria-live="polite">{toast}</div>
     </main>
