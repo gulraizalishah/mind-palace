@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { addMemory, fetchPalace, moveSavedCard, setSticker } from '../services/palace'
 import { logEvent } from '../services/cards'
 import { FLOOR_NAMES, exteriorRatio, exteriorSVG, hallSVG } from '../lib/houseSvg'
@@ -11,8 +11,15 @@ import Sticker from '../components/Sticker'
 
 const bySort = (a, b) => a.sort_order - b.sort_order
 
+// The 3D palace is loaded only when needed, so the rest of the app stays light.
+const Scene3D = lazy(() => import('../three/Scene3D.jsx'))
+const webglOK = () => {
+  try { const c = document.createElement('canvas'); return !!(window.WebGLRenderingContext && (c.getContext('webgl2') || c.getContext('webgl'))) } catch { return false }
+}
+const read3d = () => { try { return webglOK() && localStorage.getItem('mp-3d') !== '0' } catch { return webglOK() } }
+
 // Sizes the picture to the biggest box of the right shape that fits the space left on screen.
-function useFit(ratio) {
+function useFit(ratio, on = true) {
   const ref = useRef(null)
   const [box, setBox] = useState({ w: 0, h: 0 })
   useLayoutEffect(() => {
@@ -23,7 +30,7 @@ function useFit(ratio) {
     const ro = new ResizeObserver(fit)
     ro.observe(el)
     return () => ro.disconnect()
-  }, [ratio])
+  }, [ratio, on])
   return [ref, box]
 }
 
@@ -38,6 +45,9 @@ export default function Palace({ categories, rooms }) {
   const [editing, setEditing] = useState(null)
   const [listOpen, setListOpen] = useState(false)
   const [toast, setToast] = useState('')
+  const [mode3d, setMode3d] = useState(read3d)
+  const canDo3d = webglOK()
+  const toggle3d = () => { const n = !mode3d; setMode3d(n); try { localStorage.setItem('mp-3d', n ? '1' : '0') } catch { /* ignore */ } }
 
   const load = useCallback(() => fetchPalace().then(setItems).catch((e) => setError(e.message)), [])
   useEffect(() => { load(); logEvent('palace_opened') }, [load])
@@ -58,7 +68,7 @@ export default function Palace({ categories, rooms }) {
   const floorIdxOf = (roomId) => floors.findIndex((f) => [...f.L, ...f.R].some((r) => r.id === roomId))
 
   const ratio = view.t === 'out' ? exteriorRatio(Math.max(1, floors.length)) : view.t === 'hall' ? 360 / 480 : 360 / 300
-  const [stageRef, box] = useFit(ratio)
+  const [stageRef, box] = useFit(ratio, !mode3d)
 
   function go(token) {
     const [kind, val] = token.split(':')
@@ -103,7 +113,7 @@ export default function Palace({ categories, rooms }) {
     content = <p className="sub">No rooms found. Check the rooms table in Supabase.</p>
   } else if (view.t === 'out') {
     content = <div className="ext" dangerouslySetInnerHTML={{ __html: exteriorSVG(floors, cnt) }} />
-    foot = <p className="cap">{items.length} saved. Open the front door; lit windows hold your knowledge.</p>
+    foot = <p className="cap">{items.length} saved. {mode3d ? 'Drag to look around. Tap the front door.' : 'Open the front door; lit windows hold your knowledge.'}</p>
   } else if (view.t === 'hall') {
     const f = floors[view.f], total = floors.length
     title = f.name
@@ -148,11 +158,23 @@ export default function Palace({ categories, rooms }) {
       <div className="pbar">
         {left}
         <h1>{title}</h1>
-        <button className="pbtn add" onClick={() => setAdding(true)} aria-label="Add a memory from your own mind" title="Add a memory">＋</button>
+        <div className="pright">
+          {canDo3d && <button className="pbtn" onClick={toggle3d} aria-pressed={mode3d} aria-label={mode3d ? 'Switch to the flat 2D palace' : 'Switch to the 3D palace'}>{mode3d ? '2D' : '3D'}</button>}
+          <button className="pbtn add" onClick={() => setAdding(true)} aria-label="Add a memory from your own mind" title="Add a memory">＋</button>
+        </div>
       </div>
-      <div className="stage" ref={stageRef}>
-        {box.w > 0 && <div className="fitbox" style={{ width: box.w, height: box.h }}>{content}</div>}
-      </div>
+      {mode3d && floors.length > 0 ? (
+        <div className="stage3d">
+          <Suspense fallback={<p className="cap" style={{ padding: 20 }}>Building your palace…</p>}>
+            <Scene3D view={view} floors={floors} rooms={rooms} items={items} cnt={cnt} stickerOf={stickerOf}
+              onGo={go} onItem={(it) => { setOpen(it); logEvent('palace_item_opened', it.card_id) }} onFail={() => setMode3d(false)} />
+          </Suspense>
+        </div>
+      ) : (
+        <div className="stage" ref={stageRef}>
+          {box.w > 0 && <div className="fitbox" style={{ width: box.w, height: box.h }}>{content}</div>}
+        </div>
+      )}
       <div className="pfoot">{foot}</div>
 
       {listOpen && (

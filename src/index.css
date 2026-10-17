@@ -169,3 +169,8 @@ main.palace{display:flex;flex-direction:column;overflow:hidden;padding:8px 12px 
 .tabview.fromR{animation:inR .22s ease-out}.tabview.fromL{animation:inL .22s ease-out}
 @keyframes inR{from{opacity:0;transform:translateX(28px)}}@keyframes inL{from{opacity:0;transform:translateX(-28px)}}
 .gate{display:flex;flex-direction:column;align-items:flex-start;justify-content:center;gap:4px;padding-top:12vh}
+
+/* ---------- 3D palace ---------- */
+.stage3d{position:relative;flex:1;min-height:0;border-radius:16px;overflow:hidden;background:#15110e}
+.three-host{position:absolute;inset:0}
+.pright{display:flex;gap:6px;align-items:center}
