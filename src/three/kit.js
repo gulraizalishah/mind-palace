@@ -92,3 +92,14 @@ export function hitArea(w, h, x, y, z, ry, pick, p, picks) {
   const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide }))
   m.position.set(x, y, z); m.rotation.y = ry; m.userData.pick = pick; p.add(m); picks.push(m); return m
 }
+
+const smats = new Map()
+export const stickerMat = (emoji) => {
+  if (!smats.has(emoji)) smats.set(emoji, new THREE.MeshBasicMaterial({ map: stickerTex(emoji), transparent: true }))
+  return smats.get(emoji)
+}
+export const ringTex = () => cached('ring', () => canvasTex(64, 64, (g) => {
+  g.strokeStyle = 'rgba(255,255,255,.95)'; g.lineWidth = 5; g.setLineDash([9, 7]); g.beginPath(); g.arc(32, 32, 24, 0, 7); g.stroke()
+  g.fillStyle = 'rgba(255,255,255,.18)'; g.beginPath(); g.arc(32, 32, 24, 0, 7); g.fill()
+}))
+export const hashOf = (s) => { let h = 0; for (const c of String(s)) h = (h * 31 + c.charCodeAt(0)) | 0; return Math.abs(h) }

@@ -1,5 +1,7 @@
 import { useState } from 'react'
 import StickerField from './StickerField'
+import PlacePicker from './PlacePicker'
+import { placeStarts } from '../lib/places'
 
 // Add something from your own mind to the palace.
 export default function MemoryForm({ rooms, defaultRoomId, onSave, onClose }) {
@@ -7,12 +9,14 @@ export default function MemoryForm({ rooms, defaultRoomId, onSave, onClose }) {
   const [content, setContent] = useState('')
   const [emoji, setEmoji] = useState('💡')
   const [roomId, setRoomId] = useState(defaultRoomId)
+  const [place, setPlace] = useState(null)
   const [busy, setBusy] = useState(false)
+  const room = rooms.find((r) => r.id === roomId)
 
   async function submit(e) {
     e.preventDefault()
     setBusy(true)
-    await onSave({ title: title.trim(), content: content.trim(), roomId, emoji })
+    await onSave({ title: title.trim(), content: content.trim(), roomId, emoji, spot: place === null ? null : placeStarts(room.name)[place] })
     setBusy(false)
   }
 
@@ -32,9 +36,10 @@ export default function MemoryForm({ rooms, defaultRoomId, onSave, onClose }) {
         <h3 className="lbl">Room</h3>
         <div className="chips">
           {rooms.map((r) => (
-            <button type="button" key={r.id} className="chip" aria-pressed={r.id === roomId} onClick={() => setRoomId(r.id)}>{r.icon} {r.name}</button>
+            <button type="button" key={r.id} className="chip" aria-pressed={r.id === roomId} onClick={() => { setRoomId(r.id); setPlace(null) }}>{r.icon} {r.name}</button>
           ))}
         </div>
+        {room && (<><h3 className="lbl">Where in the {room.name.toLowerCase()}?</h3><PlacePicker roomName={room.name} value={place} onChange={setPlace} /></>)}
         <button className="btn" disabled={busy || !title.trim()}>Add to palace</button>{' '}
         <button type="button" className="ghost" style={{ marginTop: 0 }} onClick={onClose}>Cancel</button>
       </form>

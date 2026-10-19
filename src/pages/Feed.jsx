@@ -86,11 +86,11 @@ export default function Feed({ categories, rooms, categoryId }) {
   const catOf = (id) => categories.find((c) => c.id === id)
   const roomOf = (id) => rooms.find((r) => r.id === id)
 
-  async function pick(room, emoji) {
+  async function pick(room, emoji, spot) {
     const card = sheet
     setSheet(null)
     try {
-      await saveCard(card.id, room.id, emoji)
+      await saveCard(card.id, room.id, emoji, spot)
       setSaved((s) => ({ ...s, [card.id]: room.id }))
       logEvent('card_saved', card.id, { room: room.name })
       touch()
@@ -110,7 +110,7 @@ export default function Feed({ categories, rooms, categoryId }) {
       <div ref={sentinel} aria-hidden="true" style={{ height: 1 }} />
       {status === 'done' && cards.length > 0 && <p className="sub" style={{ textAlign: 'center' }}>You're all caught up.</p>}
       {detail && <CardDetail card={detail} category={catOf(detail.category_id)} savedRoom={roomOf(saved[detail.id])?.name} onSave={requestSave} onClose={closeDetail} />}
-      {sheet && <PlaceSheet title="Save to your palace" subtitle={sheet.title} rooms={rooms} suggestedId={sheet.default_room_id} emoji={catOf(sheet.category_id)?.icon} onPick={pick} onClose={() => setSheet(null)} />}
+      {sheet && <PlaceSheet title="Save to your palace" confirmLabel="Save" subtitle={sheet.title} rooms={rooms} suggestedId={sheet.default_room_id} emoji={catOf(sheet.category_id)?.icon} onPick={pick} onClose={() => setSheet(null)} />}
       <div id="toast" className={toast ? 'on' : ''} role="status" aria-live="polite">{toast}</div>
     </main>
   )
