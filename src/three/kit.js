@@ -103,3 +103,10 @@ export const ringTex = () => cached('ring', () => canvasTex(64, 64, (g) => {
   g.fillStyle = 'rgba(255,255,255,.18)'; g.beginPath(); g.arc(32, 32, 24, 0, 7); g.fill()
 }))
 export const hashOf = (s) => { let h = 0; for (const c of String(s)) h = (h * 31 + c.charCodeAt(0)) | 0; return Math.abs(h) }
+
+export const badgeTex = (n) => cached(`bd${n}`, () => canvasTex(64, 64, (g) => {
+  g.fillStyle = '#23766f'; g.beginPath(); g.arc(32, 32, 27, 0, 7); g.fill()
+  g.lineWidth = 4; g.strokeStyle = '#fff'; g.stroke()
+  g.fillStyle = '#fff'; g.font = 'bold 30px system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(String(n > 99 ? '99+' : n), 32, 34)
+}))
+export const invisible = () => cached('invisible-mat', () => new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }))

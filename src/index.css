@@ -174,3 +174,6 @@ main.palace{display:flex;flex-direction:column;overflow:hidden;padding:8px 12px 
 .stage3d{position:relative;flex:1;min-height:0;border-radius:16px;overflow:hidden;background:#15110e}
 .three-host{position:absolute;inset:0}
 .pright{display:flex;gap:6px;align-items:center}
+.three-wrap{position:absolute;inset:0}.three-fade{position:absolute;inset:0;background:#0f0b08;opacity:0;pointer-events:none}
+.lookbar{position:absolute;left:0;right:0;bottom:10px;display:flex;justify-content:center;gap:8px;pointer-events:none}
+.lookbar button{pointer-events:auto;background:#000a;color:#fff;border-radius:99px;padding:8px 14px;font-weight:600;font-size:14px}

@@ -1,10 +1,10 @@
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { addMemory, fetchPalace, moveSavedCard, setSpots, setSticker } from '../services/palace'
+import { addMemory, createBox, deleteBox, fetchBoxes, fetchPalace, moveSavedCard, renameBox, setPlacement, setSticker } from '../services/palace'
 import { logEvent } from '../services/cards'
 import { FLOOR_NAMES, exteriorRatio, exteriorSVG, hallSVG } from '../lib/houseSvg'
 import { roomScene } from '../lib/roomScenes'
-import PlacePicker from '../components/PlacePicker'
-import { assignSpots, placeLabel, placeStarts } from '../lib/places'
+import DestinationPicker from '../components/DestinationPicker'
+import { LEFT_WALL, RIGHT_WALL, containersOf, describePlace, layoutRoom } from '../lib/places'
 import { useStreak } from '../hooks/useStreak'
 import PlaceSheet from '../components/PlaceSheet'
 import MemoryForm from '../components/MemoryForm'
@@ -39,6 +39,9 @@ function useFit(ratio, on = true) {
 export default function Palace({ categories, rooms }) {
   const { touch } = useStreak()
   const [items, setItems] = useState([])
+  const [boxes, setBoxes] = useState([])
+  const [dlg, setDlg] = useState(null)
+  const sceneRef = useRef(null)
   const [view, setView] = useState({ t: 'out' })
   const [open, setOpen] = useState(null)
   const [moving, setMoving] = useState(null)
@@ -47,13 +50,13 @@ export default function Palace({ categories, rooms }) {
   const [editing, setEditing] = useState(null)
   const [listOpen, setListOpen] = useState(false)
   const [placing, setPlacing] = useState(null)
-  const [placeSel, setPlaceSel] = useState(null)
+  const [placeSel, setPlaceSel] = useState({ place: null, boxId: null })
   const [toast, setToast] = useState('')
   const [mode3d, setMode3d] = useState(read3d)
   const canDo3d = webglOK()
   const toggle3d = () => { const n = !mode3d; setMode3d(n); try { localStorage.setItem('mp-3d', n ? '1' : '0') } catch { /* ignore */ } }
 
-  const load = useCallback(() => fetchPalace().then(setItems).catch((e) => setError(e.message)), [])
+  const load = useCallback(() => Promise.all([fetchPalace(), fetchBoxes()]).then(([i, b]) => { setItems(i); setBoxes(b) }).catch((e) => setError(e.message)), [])
   useEffect(() => { load(); logEvent('palace_opened') }, [load])
 
   const floors = useMemo(() => {
@@ -104,25 +107,23 @@ export default function Palace({ categories, rooms }) {
     if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('g[role=button]')) { e.preventDefault(); activate(e.target) }
   }
 
-  async function move(room, _emoji, spot) {
+  async function move(room, _emoji, dest) {
     const target = moving
     setMoving(null); setOpen(null)
-    try { await moveSavedCard(target.id, room.id, spot); await load() } catch (err) { setError(err.message) }
-  }
-  // Dragged to a spot in the same room: take it, and swap with whatever was there.
-  async function moveItem(item, spot) {
-    const room = rooms.find((r) => r.id === item.room_id)
-    const mine = items.filter((i) => i.room_id === item.room_id), at = assignSpots(room.name, mine)
-    const other = mine.find((i) => i.id !== item.id && at.get(i.id) === spot)
-    const updates = [{ id: item.id, spot }]
-    if (other) updates.push({ id: other.id, spot: at.get(item.id) })
-    setItems((cur) => cur.map((i) => (updates.find((u) => u.id === i.id) ? { ...i, spot: updates.find((u) => u.id === i.id).spot } : i)))
-    try { await setSpots(updates); await load() } catch (err) { setError(err.message); load() }
+    try { await moveSavedCard(target.id, room.id, dest.place, dest.boxId); await load() } catch (err) { setError(err.message) }
   }
   async function savePlace() {
-    const it = placing, room = rooms.find((r) => r.id === it.room_id)
+    const it = placing
     setPlacing(null); setOpen(null)
-    try { await setSpots([{ id: it.id, spot: placeSel === null ? null : placeStarts(room.name)[placeSel] }]); await load() } catch (err) { setError(err.message) }
+    try { await setPlacement(it.id, placeSel.place, placeSel.boxId); await load() } catch (err) { setError(err.message) }
+  }
+  const makeBox = async (roomId, name) => { const b = await createBox(roomId, name); await load(); return b }
+  async function renameCurrentBox(b) {
+    const n = window.prompt('Rename this storage box', b.name)
+    if (n && n.trim()) { try { await renameBox(b.id, n); await load() } catch (e) { setError(e.message) } }
+  }
+  async function removeBox(b) {
+    try { await deleteBox(b.id); setDlg(null); await load() } catch (e) { setError(e.message) }
   }
   async function saveMemory(m) {
     setAdding(false)
@@ -139,7 +140,11 @@ export default function Palace({ categories, rooms }) {
     content = <p className="sub">No rooms found. Check the rooms table in Supabase.</p>
   } else if (view.t === 'out') {
     content = <div className="ext" dangerouslySetInnerHTML={{ __html: exteriorSVG(floors, cnt) }} />
-    foot = <p className="cap">{items.length} saved. {mode3d ? 'Drag to look around. Tap the front door.' : 'Open the front door; lit windows hold your knowledge.'}</p>
+    foot = (<>
+      <button className="chip" data-go="hall:0">🚪 Front door</button>
+      {garden && <button className="chip" data-go={`room:${garden.id}`}>🌳 Garden</button>}
+      {shed && <button className="chip" data-go={`room:${shed.id}`}>🛖 Shed</button>}
+    </>)
   } else if (view.t === 'hall') {
     const f = floors[view.f], total = floors.length
     title = f.name
@@ -189,15 +194,23 @@ export default function Palace({ categories, rooms }) {
         <h1>{title}</h1>
         <div className="pright">
           {canDo3d && <button className="pbtn" onClick={toggle3d} aria-pressed={mode3d} aria-label={mode3d ? 'Switch to the flat 2D palace' : 'Switch to the 3D palace'}>{mode3d ? '2D' : '3D'}</button>}
-          <button className="pbtn add" onClick={() => setAdding(true)} aria-label="Add a memory from your own mind" title="Add a memory">＋</button>
+          <button className="pbtn add" onClick={() => setAdding({})} aria-label="Add a memory from your own mind" title="Add a memory">＋</button>
         </div>
       </div>
       {mode3d && floors.length > 0 ? (
         <div className="stage3d">
           <Suspense fallback={<p className="cap" style={{ padding: 20 }}>Building your palace…</p>}>
-            <Scene3D view={view} floors={floors} rooms={rooms} items={items} cnt={cnt} stickerOf={stickerOf}
-              onGo={go} onMove={moveItem} onItem={(it) => { setOpen(it); logEvent('palace_item_opened', it.card_id) }} onFail={() => setMode3d(false)} />
+            <Scene3D ref={sceneRef} view={view} floors={floors} rooms={rooms} items={items} boxes={boxes} cnt={cnt} stickerOf={stickerOf}
+              onGo={go} onItem={(it) => { setOpen(it); logEvent('palace_item_opened', it.card_id) }}
+              onPlace={(name) => setDlg({ kind: 'place', name, roomId: view.id })} onBox={(id) => setDlg({ kind: 'box', id, roomId: view.id })} onFail={() => setMode3d(false)} />
           </Suspense>
+          {view.t === 'room' && (
+            <div className="lookbar">
+              <button onClick={() => sceneRef.current?.look(-1)} aria-label="Look at the left wall">◀ Left wall</button>
+              <button onClick={() => sceneRef.current?.look(0)} aria-label="Look straight ahead">Front</button>
+              <button onClick={() => sceneRef.current?.look(1)} aria-label="Look at the right wall">Right wall ▶</button>
+            </div>
+          )}
         </div>
       ) : (
         <div className="stage" ref={stageRef}>
@@ -226,10 +239,10 @@ export default function Palace({ categories, rooms }) {
           <div className="card sheet" role="dialog" aria-label={open.title} onClick={(e) => e.stopPropagation()}>
             <Sticker emoji={stickerOf(open)} size={44} seed={open.id} />
             <h2 style={{ marginTop: 14 }}>{open.title}</h2>{open.content && <p>{open.content}</p>}
-            {(() => { const rm = rooms.find((r) => r.id === open.room_id); if (!rm) return null; const sp = assignSpots(rm.name, items.filter((i) => i.room_id === open.room_id)).get(open.id); return sp === undefined ? null : <p className="src">{rm.name}: {placeLabel(rm.name, sp)}</p> })()}
+            {(() => { const rm = rooms.find((r) => r.id === open.room_id); if (!rm) return null; return <p className="src">{rm.name}: {describePlace(rm.name, items.filter((i) => i.room_id === rm.id), boxes.filter((x) => x.room_id === rm.id), open)}</p> })()}
             <button className="btn" onClick={() => setOpen(null)}>Got it</button>{' '}
             <button className="ghost" style={{ marginTop: 0 }} onClick={() => setEditing(open)}>Change sticker</button>{' '}
-            <button className="ghost" style={{ marginTop: 0 }} onClick={() => { setPlaceSel(null); setPlacing(open) }}>Change place</button>{' '}
+            <button className="ghost" style={{ marginTop: 0 }} onClick={() => { setPlaceSel({ place: open.place, boxId: open.box_id }); setPlacing(open) }}>Change place</button>{' '}
             <button className="ghost" style={{ marginTop: 0 }} onClick={() => setMoving(open)}>Move room</button>
           </div>
         </div>
@@ -239,14 +252,45 @@ export default function Palace({ categories, rooms }) {
         <div className="modal" onClick={() => setPlacing(null)}>
           <div className="card sheet" role="dialog" aria-modal="true" aria-label="Change place" onClick={(e) => e.stopPropagation()}>
             <h2>Where in the {rooms.find((r) => r.id === placing.room_id)?.name.toLowerCase()}?</h2><p className="sub">{placing.title}</p>
-            <PlacePicker roomName={rooms.find((r) => r.id === placing.room_id)?.name} value={placeSel} onChange={setPlaceSel} />
+            <DestinationPicker room={rooms.find((r) => r.id === placing.room_id)} items={items} boxes={boxes} value={placeSel} onChange={setPlaceSel} onCreateBox={makeBox} />
             <button className="btn" onClick={savePlace}>Save place</button>{' '}
             <button className="ghost" style={{ marginTop: 0 }} onClick={() => setPlacing(null)}>Cancel</button>
           </div>
         </div>
       )}
-      {moving && <PlaceSheet title="Move to which room?" subtitle={moving.title} rooms={rooms} suggestedId={moving.room_id} allowSticker={false} confirmLabel="Move here" onPick={move} onClose={() => setMoving(null)} />}
-      {adding && <MemoryForm rooms={rooms} defaultRoomId={view.t === 'room' ? view.id : (rooms.find((r) => r.name === 'Study') || rooms[0]).id} onSave={saveMemory} onClose={() => setAdding(false)} />}
+      {moving && <PlaceSheet title="Move to which room?" subtitle={moving.title} rooms={rooms} suggestedId={moving.room_id} allowSticker={false} confirmLabel="Move here" items={items} boxes={boxes} onCreateBox={makeBox} onPick={move} onClose={() => setMoving(null)} />}
+      {dlg && (() => {
+        const room = rooms.find((r) => r.id === dlg.roomId)
+        if (!room) return null
+        const lay = layoutRoom(room.name, items.filter((i) => i.room_id === room.id), boxes.filter((b) => b.room_id === room.id))
+        const isBox = dlg.kind === 'box', bx = isBox ? boxes.find((b) => b.id === dlg.id) : null
+        if (isBox && !bx) return null
+        const list = isBox ? lay.boxes[dlg.id] : dlg.name === LEFT_WALL ? lay.left : dlg.name === RIGHT_WALL ? lay.right : lay.by[dlg.name] || []
+        const icon = isBox ? '📦' : containersOf(room.name).find((c) => c[0] === dlg.name)?.[1] || '🖼️'
+        const label = isBox ? bx.name : dlg.name
+        return (
+          <div className="modal" onClick={() => setDlg(null)}>
+            <div className="card sheet" role="dialog" aria-modal="true" aria-label={label} onClick={(e) => e.stopPropagation()}>
+              <h2>{icon} {label}</h2>
+              <p className="sub">{room.name} · {list.length} {list.length === 1 ? 'memory' : 'memories'}</p>
+              {list.length === 0 && <p className="sub">Nothing kept here yet.</p>}
+              <ul className="itemlist">
+                {list.map((it) => (
+                  <li key={it.id}><button onClick={() => { setDlg(null); setOpen(it); logEvent('palace_item_opened', it.card_id) }}>
+                    <Sticker emoji={stickerOf(it)} size={18} seed={it.id} /><span>{it.title}</span></button></li>
+                ))}
+              </ul>
+              <button className="btn" onClick={() => { setDlg(null); setAdding({ roomId: room.id, dest: isBox ? { place: null, boxId: dlg.id } : { place: dlg.name, boxId: null } }) }}>＋ Add a memory here</button>{' '}
+              {isBox && <button className="ghost" style={{ marginTop: 0 }} onClick={() => renameCurrentBox(bx)}>Rename</button>}{' '}
+              {isBox && list.length === 0 && <button className="ghost" style={{ marginTop: 0 }} onClick={() => removeBox(bx)}>Delete box</button>}{' '}
+              <button className="ghost" style={{ marginTop: 0 }} onClick={() => setDlg(null)}>Close</button>
+            </div>
+          </div>
+        )
+      })()}
+      {adding && <MemoryForm rooms={rooms} items={items} boxes={boxes} onCreateBox={makeBox}
+        defaultRoomId={adding.roomId ?? (view.t === 'room' ? view.id : (rooms.find((r) => r.name === 'Study') || rooms[0]).id)}
+        defaultDest={adding.dest} onSave={saveMemory} onClose={() => setAdding(false)} />}
       <div id="toast" className={toast ? 'on' : ''} role="status" aria-live="polite">{toast}</div>
     </main>
   )

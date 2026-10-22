@@ -1,51 +1,45 @@
-// Where things can go inside each room. Kept free of 3D code so the save sheet stays light.
-// [place name, icon, number of spots, look]  look: 'tag' = sticker stuck on a surface, 'book' = a book on a shelf, 'box' = a box or jar on a shelf.
-// The order here MUST match the order of the spots drawn in three/rooms.js.
-export const PLACES = {
-  Kitchen: [['Refrigerator', '🧊', 3, 'tag'], ['Counter', '🍽️', 4, 'tag'], ['Cupboards', '🗄️', 2, 'tag'], ['Pantry shelf', '🫙', 3, 'box'], ['Table', '🪑', 2, 'tag']],
-  Garage: [['Car', '🚗', 2, 'tag'], ['Workbench', '🔧', 2, 'tag'], ['Pegboard', '🪛', 2, 'tag'], ['Garage door', '🚪', 2, 'tag'], ['Shelf', '📦', 2, 'box'], ['Tires', '🛞', 1, 'tag'], ['Floor', '⬜', 1, 'tag']],
-  Study: [['Bookshelf, top shelf', '📚', 2, 'book'], ['Bookshelf, 2nd shelf', '📚', 2, 'book'], ['Bookshelf, 3rd shelf', '📚', 2, 'book'], ['Bookshelf, bottom shelf', '📚', 2, 'book'], ['Desk', '🖥️', 2, 'tag'], ['Picture frame', '🖼️', 1, 'tag'], ['Window', '🪟', 1, 'tag'], ['Rug', '🟣', 1, 'tag']],
-  Office: [['Whiteboard', '📝', 3, 'tag'], ['Desk', '🖥️', 2, 'tag'], ['Wall clock', '🕒', 1, 'tag'], ['Filing cabinet', '🗄️', 1, 'tag'], ['Monitor', '🖥️', 1, 'tag'], ['Plant', '🪴', 1, 'tag']],
-  Library: [
-    ['Left bookcase, top shelf', '📚', 3, 'book'], ['Left bookcase, 2nd shelf', '📚', 3, 'book'], ['Left bookcase, 3rd shelf', '📚', 3, 'book'], ['Left bookcase, bottom shelf', '📚', 3, 'book'],
-    ['Right bookcase, top shelf', '📚', 3, 'book'], ['Right bookcase, 2nd shelf', '📚', 3, 'book'], ['Right bookcase, 3rd shelf', '📚', 3, 'book'], ['Right bookcase, bottom shelf', '📚', 3, 'book'],
-    ['Armchair', '🛋️', 1, 'tag'], ['Window', '🪟', 1, 'tag'],
-  ],
-  Workshop: [['Pegboard', '🪛', 3, 'tag'], ['Workbench', '🔧', 3, 'tag'], ['Shelf', '📦', 3, 'box'], ['Tool chest', '🧰', 1, 'tag'], ['Sawhorse', '🪚', 1, 'tag'], ['Floor', '⬜', 1, 'tag']],
-  Bathroom: [['Bathtub', '🛁', 2, 'tag'], ['Vanity', '🚰', 2, 'tag'], ['Mirror', '🪞', 1, 'tag'], ['Toilet', '🚽', 1, 'tag'], ['Window', '🪟', 1, 'tag'], ['Towel rail', '🧺', 1, 'tag'], ['Floor', '⬜', 1, 'tag']],
-  Garden: [['Tree', '🌳', 3, 'tag'], ['Fence', '🚧', 3, 'tag'], ['Shed wall', '🛖', 1, 'tag'], ['Flower bed', '🌷', 3, 'tag'], ['Lawn', '🌱', 2, 'tag']],
-  Shed: [['Top shelf', '📦', 3, 'box'], ['Lower shelf', '📦', 3, 'box'], ['Tool wall', '🪓', 3, 'tag'], ['Workbench', '🔧', 2, 'tag'], ['Floor', '⬜', 2, 'tag']],
-  Generic: [['Desk', '🖥️', 2, 'tag'], ['Window', '🪟', 1, 'tag'], ['Floor', '⬜', 3, 'tag']],
-}
+// Where a memory can be kept in a room. Furniture are containers (tap them to see what is inside),
+// the two side walls hold hanging pictures, and small storage boxes take the overflow.
+export const WALL_CAP = 6          // pictures per side wall
+export const MAX_BOXES = 8         // storage boxes per room
+export const LEFT_WALL = 'Left wall'
+export const RIGHT_WALL = 'Right wall'
 
-export const placesOf = (roomName) => PLACES[roomName] || PLACES.Generic
-export const spotCount = (roomName) => placesOf(roomName).reduce((n, p) => n + p[2], 0)
-// first spot number of each place
-export const placeStarts = (roomName) => { let n = 0; return placesOf(roomName).map((p) => { const s = n; n += p[2]; return s }) }
-export const placeIndexOf = (roomName, spot) => {
-  const starts = placeStarts(roomName), list = placesOf(roomName)
-  for (let i = list.length - 1; i >= 0; i--) if (spot >= starts[i]) return i
-  return 0
+// [name, icon]. Names must match the furniture in three/rooms.js.
+export const CONTAINERS = {
+  Kitchen: [['Refrigerator', '🧊'], ['Counter', '🍽️'], ['Cupboards', '🗄️'], ['Pantry shelf', '🫙'], ['Table', '🪑']],
+  Garage: [['Car', '🚗'], ['Workbench', '🔧'], ['Pegboard', '🪛'], ['Garage door', '🚪'], ['Shelf', '📦'], ['Tires', '🛞']],
+  Study: [['Bookshelf', '📚'], ['Desk', '🖥️'], ['Picture frame', '🖼️'], ['Window', '🪟'], ['Rug', '🟣']],
+  Office: [['Whiteboard', '📝'], ['Desk', '🖥️'], ['Wall clock', '🕒'], ['Filing cabinet', '🗄️'], ['Monitor', '🖥️'], ['Plant', '🪴']],
+  Library: [['Left bookcase', '📚'], ['Right bookcase', '📚'], ['Armchair', '🛋️'], ['Window', '🪟']],
+  Workshop: [['Pegboard', '🪛'], ['Workbench', '🔧'], ['Shelf', '📦'], ['Tool chest', '🧰'], ['Sawhorse', '🪚']],
+  Bathroom: [['Bathtub', '🛁'], ['Vanity', '🚰'], ['Mirror', '🪞'], ['Toilet', '🚽'], ['Window', '🪟'], ['Towel rail', '🧺']],
+  Garden: [['Tree', '🌳'], ['Fence', '🚧'], ['Flower bed', '🌷'], ['Lawn', '🌱']],
+  Shed: [['Top shelf', '📦'], ['Lower shelf', '📦'], ['Tool wall', '🪓'], ['Workbench', '🔧'], ['Floor', '⬜']],
+  Generic: [['Desk', '🖥️'], ['Window', '🪟'], ['Floor', '⬜']],
 }
-export const lookOf = (roomName, spot) => placesOf(roomName)[placeIndexOf(roomName, spot)][3]
-export const placeLabel = (roomName, spot) => placesOf(roomName)[placeIndexOf(roomName, spot)][0]
+export const containersOf = (roomName) => CONTAINERS[roomName] || CONTAINERS.Generic
 
-// Decide where every item sits in a room. Items keep the spot they were given;
-// a taken or missing spot falls back to the next free spot in the same place, then anywhere.
-export function assignSpots(roomName, items) {
-  const total = spotCount(roomName), used = new Set(), out = new Map()
-  const valid = (s) => Number.isInteger(s) && s >= 0 && s < total
-  items.forEach((it) => { if (valid(it.spot) && !used.has(it.spot)) { out.set(it.id, it.spot); used.add(it.spot) } })
-  const starts = placeStarts(roomName), list = placesOf(roomName)
+// Sort a room's memories into walls, furniture and boxes. An item with no (or an unknown) place
+// goes to the room's first container. A full wall sends extra pictures to the first container too.
+export function layoutRoom(roomName, items, boxes = []) {
+  const list = containersOf(roomName), names = new Set(list.map((c) => c[0])), boxIds = new Set(boxes.map((b) => b.id))
+  const out = { left: [], right: [], by: Object.fromEntries(list.map((c) => [c[0], []])), boxes: Object.fromEntries(boxes.map((b) => [b.id, []])) }
   items.forEach((it) => {
-    if (out.has(it.id)) return
-    let pick = null
-    if (valid(it.spot)) {
-      const pi = placeIndexOf(roomName, it.spot)
-      for (let i = starts[pi]; i < starts[pi] + list[pi][2]; i++) if (!used.has(i)) { pick = i; break }
-    }
-    if (pick === null) for (let i = 0; i < total; i++) if (!used.has(i)) { pick = i; break }
-    if (pick !== null) { out.set(it.id, pick); used.add(pick) }
+    if (it.box_id && boxIds.has(it.box_id)) { out.boxes[it.box_id].push(it); return }
+    if (it.place === LEFT_WALL && out.left.length < WALL_CAP) { out.left.push(it); return }
+    if (it.place === RIGHT_WALL && out.right.length < WALL_CAP) { out.right.push(it); return }
+    out.by[names.has(it.place) ? it.place : list[0][0]].push(it)
   })
   return out
+}
+
+// "Where is this memory now?" as words.
+export function describePlace(roomName, items, boxes, item) {
+  const lay = layoutRoom(roomName, items, boxes)
+  if (lay.left.includes(item)) return 'Left wall'
+  if (lay.right.includes(item)) return 'Right wall'
+  for (const b of boxes) if (lay.boxes[b.id]?.includes(item)) return `Storage box: ${b.name}`
+  for (const [name, list] of Object.entries(lay.by)) if (list.includes(item)) return name
+  return ''
 }

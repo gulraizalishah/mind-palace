@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { PAGE_SIZE, fetchFeed, logEvent, logViews } from '../services/cards'
-import { fetchSaved, saveCard } from '../services/palace'
+import { createBox, fetchBoxes, fetchPalace, fetchSaved, saveCard } from '../services/palace'
 import KnowledgeCard from '../components/KnowledgeCard'
 import PlaceSheet from '../components/PlaceSheet'
 import CardDetail from '../components/CardDetail'
@@ -25,6 +25,8 @@ export default function Feed({ categories, rooms, categoryId }) {
   const [saved, setSaved] = useState({}) // cardId -> roomId
   const [sheet, setSheet] = useState(null)
   const [detail, setDetail] = useState(null)
+  const [layout, setLayout] = useState({ items: [], boxes: [] })
+  const refreshLayout = useCallback(() => Promise.all([fetchPalace(), fetchBoxes()]).then(([items, boxes]) => setLayout({ items, boxes })).catch(() => {}), [])
   const [toast, setToast] = useState('')
   const [status, setStatus] = useState('loading') // loading | idle | done | error
   const [error, setError] = useState('')
@@ -59,6 +61,7 @@ export default function Feed({ categories, rooms, categoryId }) {
 
   useEffect(() => {
     if (!user) { setSaved({}); return }
+    refreshLayout()
     fetchSaved().then((rows) => setSaved(Object.fromEntries(rows.filter((r) => r.card_id).map((r) => [r.card_id, r.room_id])))).catch(() => {})
   }, [user?.id])
 
@@ -86,13 +89,13 @@ export default function Feed({ categories, rooms, categoryId }) {
   const catOf = (id) => categories.find((c) => c.id === id)
   const roomOf = (id) => rooms.find((r) => r.id === id)
 
-  async function pick(room, emoji, spot) {
+  async function pick(room, emoji, dest) {
     const card = sheet
     setSheet(null)
     try {
-      await saveCard(card.id, room.id, emoji, spot)
+      await saveCard(card.id, room.id, emoji, dest.place, dest.boxId)
       setSaved((s) => ({ ...s, [card.id]: room.id }))
-      logEvent('card_saved', card.id, { room: room.name })
+      logEvent('card_saved', card.id, { room: room.name }); refreshLayout()
       touch()
       setToast(`Saved to ${room.name} ${room.icon}`)
     } catch (e) { setToast(e.message) }
@@ -110,7 +113,7 @@ export default function Feed({ categories, rooms, categoryId }) {
       <div ref={sentinel} aria-hidden="true" style={{ height: 1 }} />
       {status === 'done' && cards.length > 0 && <p className="sub" style={{ textAlign: 'center' }}>You're all caught up.</p>}
       {detail && <CardDetail card={detail} category={catOf(detail.category_id)} savedRoom={roomOf(saved[detail.id])?.name} onSave={requestSave} onClose={closeDetail} />}
-      {sheet && <PlaceSheet title="Save to your palace" confirmLabel="Save" subtitle={sheet.title} rooms={rooms} suggestedId={sheet.default_room_id} emoji={catOf(sheet.category_id)?.icon} onPick={pick} onClose={() => setSheet(null)} />}
+      {sheet && <PlaceSheet title="Save to your palace" confirmLabel="Save" subtitle={sheet.title} rooms={rooms} suggestedId={sheet.default_room_id} emoji={catOf(sheet.category_id)?.icon} items={layout.items} boxes={layout.boxes} onCreateBox={async (rid, name) => { const b = await createBox(rid, name); await refreshLayout(); return b }} onPick={pick} onClose={() => setSheet(null)} />}
       <div id="toast" className={toast ? 'on' : ''} role="status" aria-live="polite">{toast}</div>
     </main>
   )

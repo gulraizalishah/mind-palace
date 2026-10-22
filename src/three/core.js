@@ -2,21 +2,21 @@ import { THREE } from './kit'
 
 const ease = (t) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2)
 
-// Owns the WebGL canvas: drawing on demand, look-around / orbit drag, tap picking and camera flights.
+// Owns the WebGL canvas: drawing on demand, look-around / orbit drag, tap picking and smooth camera flights.
 export class Stage {
-  constructor(host, onPick, onMove) {
-    this.host = host; this.onPick = onPick; this.onMove = onMove
-    this.rtsCur = []; this.rtsNext = []; this.dragging = false; this.canDrag = false; this.spots = []; this.markers = null
+  constructor(host, onPick, onFade) {
+    this.host = host; this.onPick = onPick; this.onFade = onFade
     const r = (this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'low-power' }))
     r.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2))
     r.outputColorSpace = THREE.SRGBColorSpace
     r.domElement.style.cssText = 'display:block;width:100%;height:100%;touch-action:none;outline:none'
     host.appendChild(r.domElement)
     this.scene = new THREE.Scene()
-    this.camera = new THREE.PerspectiveCamera(65, 1, 0.05, 150)
+    this.camera = new THREE.PerspectiveCamera(65, 1, 0.05, 200)
     this.ray = new THREE.Raycaster()
-    this.picks = []; this.tweens = []; this.cam = null; this.free = false; this.dirty = true
+    this.picks = []; this.tweens = []; this.timers = []; this.cam = null; this.free = false; this.dirty = true
     this.da = 0; this.dp = 0; this.az = 0; this.el = 0
+    this.rtsCur = []; this.rtsNext = []
     this.bindEvents()
     this.ro = new ResizeObserver(() => this.resize()); this.ro.observe(host); this.resize()
     this.loop = this.loop.bind(this); this.raf = requestAnimationFrame(this.loop)
@@ -26,7 +26,6 @@ export class Stage {
     const w = this.host.clientWidth || 1, h = this.host.clientHeight || 1, a = w / h
     this.renderer.setSize(w, h, false)
     this.camera.aspect = a
-    // keep a comfortable sideways view on tall phone screens
     const hfov = ((this.cam?.hfov ?? 68) * Math.PI) / 180
     this.camera.fov = Math.min(98, Math.max(48, (2 * Math.atan(Math.tan(hfov / 2) / a) * 180) / Math.PI))
     this.camera.updateProjectionMatrix(); this.applyCamera(); this.dirty = true
@@ -37,11 +36,8 @@ export class Stage {
     this.group = view.group; this.scene.add(view.group)
     this.scene.background = view.bg || null
     this.picks = view.picks || []; this.cam = view.cam
-    this.spots = view.spots || []; this.markers = view.markers || null; this.canDrag = !!view.canDrag
     this.rtsCur.forEach((rt) => rt.dispose()); this.rtsCur = this.rtsNext; this.rtsNext = []
-    if (!keepLook) {
-      this.da = 0; this.dp = 0; this.az = view.cam.az ?? 0; this.el = view.cam.el ?? 0.2
-    }
+    if (!keepLook) { this.da = 0; this.dp = 0; this.az = view.cam.az ?? 0; this.el = view.cam.el ?? 0.2 }
     this.free = false; this.tweens = []
     this.resize()
     if (view.cam.mode === 'look') {
@@ -65,19 +61,40 @@ export class Stage {
     }
   }
 
-  tween(ms, fn, done) { this.tweens.push({ t0: performance.now(), ms, fn, done }) ; this.dirty = true }
+  tween(ms, fn, done) { this.tweens.push({ t0: performance.now(), ms, fn, done }); this.dirty = true }
+  later(ms, fn) { this.timers.push(setTimeout(fn, ms)) }
 
-  // Fly the camera to a spot, looking at a point, then call done.
+  // Fly the camera to a spot. Position and turn are blended together, so there is no sudden swing.
   flyTo(pos, target, ms, done) {
-    const p0 = this.camera.position.clone()
-    const dir = new THREE.Vector3(); this.camera.getWorldDirection(dir)
-    const t0 = p0.clone().addScaledVector(dir, 6), p1 = new THREE.Vector3(...pos), t1 = new THREE.Vector3(...target)
+    const p0 = this.camera.position.clone(), q0 = this.camera.quaternion.clone(), p1 = new THREE.Vector3(...pos)
+    const q1 = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().lookAt(p1, new THREE.Vector3(...target), new THREE.Vector3(0, 1, 0)))
     this.free = true
-    this.tween(ms, (k) => {
-      const e = ease(k)
-      this.camera.position.lerpVectors(p0, p1, e)
-      this.camera.lookAt(new THREE.Vector3().lerpVectors(t0, t1, e))
-    }, done)
+    this.tween(ms, (k) => { const e = ease(k); this.camera.position.lerpVectors(p0, p1, e); this.camera.quaternion.slerpQuaternions(q0, q1, e) }, done)
+  }
+
+  // Walk through a door or up a stair: open it, fly to it, fade to dark, then call done to change the view.
+  transition(pick, done) {
+    const ms = pick.ms || 1000
+    this.free = true
+    if (pick.pivot) this.tween(550, (k) => { pick.pivot.rotation.y = pick.angle * ease(k) })
+    this.flyTo(pick.fly.pos, pick.fly.target, ms)
+    this.later(ms - 330, () => this.onFade?.(1, 330))
+    this.later(ms + 30, done)
+  }
+
+  // After the view changes: start a step back and ease forward.
+  walkIn(dist = 0.9, ms = 600) {
+    const f = new THREE.Vector3(); this.camera.getWorldDirection(f)
+    const p1 = this.camera.position.clone(), flat = f.clone().setY(0).normalize(), p0 = p1.clone().addScaledVector(flat, -dist)
+    this.free = true
+    this.tween(ms, (k) => this.camera.position.lerpVectors(p0, p1, ease(k)), () => { this.free = false; this.applyCamera() })
+  }
+
+  // Turn the view to the left (+) or right (-) wall, or back to the middle.
+  lookTo(da, dp, ms = 550) {
+    if (this.cam?.mode !== 'look' || this.free) return
+    const a0 = this.da, p0 = this.dp
+    this.tween(ms, (k) => { const e = ease(k); this.da = a0 + (da - a0) * e; this.dp = p0 + (dp - p0) * e; this.applyCamera() })
   }
 
   // Draw a view into a texture. Used for the picture you see through a door as it opens.
@@ -91,71 +108,14 @@ export class Stage {
     return rt.texture
   }
 
-  // After stepping through a door: start a little way back and walk into the new view.
-  walkIn(dist = 2.4, ms = 650) {
-    const f = new THREE.Vector3(); this.camera.getWorldDirection(f)
-    const p1 = this.camera.position.clone(), t1 = p1.clone().addScaledVector(f, 6)
-    const flat = f.clone().setY(0).normalize(), p0 = p1.clone().addScaledVector(flat, -dist)
-    this.free = true
-    this.tween(ms, (k) => { this.camera.position.lerpVectors(p0, p1, ease(k)); this.camera.lookAt(t1) }, () => { this.free = false; this.applyCamera() })
-  }
-
-  ndc(e) {
-    const r = this.renderer.domElement.getBoundingClientRect()
-    return new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1)
-  }
-  hit(e) {
-    this.ray.setFromCamera(this.ndc(e), this.camera)
-    return this.ray.intersectObjects(this.picks, false)[0]
-  }
-  beginDrag(obj) {
-    const root = obj.userData.root, dir = new THREE.Vector3(); this.camera.getWorldDirection(dir)
-    this.dragging = true; this.dragRoot = root; this.dragItem = obj.userData.pick.item; this.dragFrom = root.position.clone(); this.dragSpot = -1
-    this.dragPlane = new THREE.Plane().setFromNormalAndCoplanarPoint(dir, root.position)
-    if (this.markers) this.markers.visible = true
-    this.renderer.domElement.style.cursor = 'grabbing'; this.dirty = true
-  }
-  dragMove(e) {
-    this.ray.setFromCamera(this.ndc(e), this.camera)
-    const p = new THREE.Vector3()
-    if (this.ray.ray.intersectPlane(this.dragPlane, p)) this.dragRoot.position.copy(p)
-    const r = this.renderer.domElement.getBoundingClientRect()
-    let best = -1, bd = 80
-    this.spots.forEach((sp, i) => {
-      const v = sp.clone().project(this.camera)
-      const d = Math.hypot((v.x * 0.5 + 0.5) * r.width + r.left - e.clientX, (-v.y * 0.5 + 0.5) * r.height + r.top - e.clientY)
-      if (v.z < 1 && d < bd) { bd = d; best = i }
-    })
-    this.dragSpot = best
-    this.markers?.children.forEach((m, i) => { const on = i === best; m.scale.setScalar(on ? 0.85 : 0.55); m.material.opacity = on ? 1 : 0.7 })
-    this.dirty = true
-  }
-  endDrag() {
-    const spot = this.dragSpot, root = this.dragRoot, item = this.dragItem
-    if (this.markers) this.markers.visible = false
-    root.position.copy(this.dragFrom)
-    this.renderer.domElement.style.cursor = ''
-    this.dragging = false; this.dirty = true
-    if (spot >= 0 && spot !== root.userData.spot) this.onMove?.(item, spot)
-  }
-
   bindEvents() {
     const el = this.renderer.domElement
     let down = null
-    el.addEventListener('pointerdown', (e) => {
-      el.setPointerCapture(e.pointerId)
-      down = { x: e.clientX, y: e.clientY, lx: e.clientX, ly: e.clientY, t: performance.now(), moved: 0, obj: null }
-      if (this.canDrag && !this.free) { const h = this.hit(e); if (h?.object.userData.pick?.type === 'item') down.obj = h.object }
-    })
+    el.addEventListener('pointerdown', (e) => { el.setPointerCapture(e.pointerId); down = { lx: e.clientX, ly: e.clientY, t: performance.now(), moved: 0 } })
     el.addEventListener('pointermove', (e) => {
       if (!down || this.free || !this.cam) return
       const dx = e.clientX - down.lx, dy = e.clientY - down.ly
       down.lx = e.clientX; down.ly = e.clientY; down.moved += Math.abs(dx) + Math.abs(dy)
-      if (down.obj) { // an item was grabbed: move it instead of looking around
-        if (!this.dragging && down.moved > 10) this.beginDrag(down.obj)
-        if (this.dragging) this.dragMove(e)
-        return
-      }
       const c = this.cam
       if (c.mode === 'look') {
         this.da = Math.max(-c.yaw, Math.min(c.yaw, this.da + dx * 0.0045))
@@ -167,11 +127,10 @@ export class Stage {
       this.applyCamera(); this.dirty = true
     })
     el.addEventListener('pointerup', (e) => {
-      if (this.dragging) this.endDrag()
-      else if (down && down.moved < 8 && performance.now() - down.t < 600) this.pick(e)
+      if (down && down.moved < 8 && performance.now() - down.t < 600) this.pick(e)
       down = null
     })
-    el.addEventListener('pointercancel', () => { if (this.dragging) this.endDrag(); down = null })
+    el.addEventListener('pointercancel', () => { down = null })
     el.addEventListener('wheel', (e) => {
       const c = this.cam
       if (c?.mode === 'orbit' && !this.free) { c.r = Math.max(c.rMin, Math.min(c.rMax, c.r + e.deltaY * 0.01)); this.applyCamera(); this.dirty = true; e.preventDefault() }
@@ -180,7 +139,9 @@ export class Stage {
 
   pick(e) {
     if (this.free) return
-    const hit = this.hit(e)
+    const r = this.renderer.domElement.getBoundingClientRect()
+    this.ray.setFromCamera(new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1), this.camera)
+    const hit = this.ray.intersectObjects(this.picks, false)[0]
     if (hit?.object.userData.pick) this.onPick(hit.object.userData.pick, hit.object)
   }
 
@@ -195,14 +156,14 @@ export class Stage {
         if (k >= 1) { finished.push(tw.done); return false }
         return true
       })
-      finished.forEach((f) => f?.()) // run after the list is updated, so a finished tween can start the next one
+      finished.forEach((f) => f?.())
       this.dirty = true
     }
     if (this.dirty) { this.dirty = false; this.renderer.render(this.scene, this.camera) }
   }
 
   dispose() {
-    cancelAnimationFrame(this.raf); this.ro.disconnect()
+    cancelAnimationFrame(this.raf); this.ro.disconnect(); this.timers.forEach(clearTimeout)
     this.rtsCur.concat(this.rtsNext).forEach((rt) => rt.dispose())
     this.renderer.dispose(); this.renderer.forceContextLoss?.()
     this.renderer.domElement.remove()

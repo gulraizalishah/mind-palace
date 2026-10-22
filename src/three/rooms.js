@@ -1,5 +1,5 @@
-import { THREE, box, cyl, sph, plane, mat, glow, checkerTex, plankTex, tileTex, stripeTex, gradTex, stickerSprite, stickerMat, ringTex, hashOf, hitArea, labelTex } from './kit'
-import { assignSpots, lookOf } from '../lib/places'
+import { THREE, box, cyl, sph, plane, mat, glow, checkerTex, plankTex, tileTex, stripeTex, gradTex, stickerMat, hashOf, hitArea, labelTex, badgeTex, invisible } from './kit'
+import { layoutRoom, LEFT_WALL, RIGHT_WALL } from '../lib/places'
 
 // Room size in metres: x = width, z = depth, y = height. The camera stands by the open front.
 const W = 7, D = 5.5, H = 3, HW = W / 2, HD = D / 2
@@ -214,7 +214,7 @@ const ROOMS = {
     const pivot = new THREE.Group(); pivot.position.set(3.05, 0, -2.04); g.add(pivot)
     const panel = box(0.7, 1.3, 0.06, '#7a5a3e', 0.35, 0.65, 0, pivot); sph(0.04, '#e0c98f', 0.6, 0.62, 0.05, pivot)
     if (ctx.shedId) {
-      const pick = { type: 'door', token: `room:${ctx.shedId}`, pivot, angle: -1.7, fly: { pos: [3.4, 1.4, -1.0], target: [3.4, 1.1, -4.5] } }
+      const pick = { type: 'door', token: `room:${ctx.shedId}`, pivot, angle: -1.7, ms: 1000, fly: { pos: [3.4, 1.4, -0.9], target: [3.4, 1.1, -3.5] } }
       panel.userData.pick = pick; ctx.picks.push(panel)
       hitArea(1.4, 1.9, 3.4, 0.95, -1.9, 0, pick, g, ctx.picks)
       plane(0.9, 0.22, new THREE.MeshBasicMaterial({ map: labelTex('Shed'), transparent: true }), 3.4, 1.62, -2.04, 0, 0, g)
@@ -253,44 +253,66 @@ ROOMS.Generic = (g, wall) => {
 const GARDEN_CAM = { mode: 'look', pos: [0, 1.6, 3.6], target: [0, 1.5, -4], yaw: 0.9, pitch: 0.35, hfov: 78 }
 const ROOM_CAM = { mode: 'look', pos: [0, 1.5, 2.55], target: [0, 1.0, -2.75], yaw: 1.0, pitch: 0.4, hfov: 84 }
 
-// What an item looks like where it sits: a sticker, a book on a shelf, or a box or jar.
-function itemObject(look, emoji, item, spot, dist) {
-  const root = new THREE.Group(); root.position.set(spot[0], spot[1], spot[2]); root.rotation.y = spot[3] || 0
-  const meshes = []
-  if (look === 'book') {
-    meshes.push(box(0.3, 0.42, 0.07, BOOKS[hashOf(item.id) % BOOKS.length], 0, 0, 0, root))
-    meshes.push(plane(0.22, 0.22, stickerMat(emoji), 0, 0.02, 0.041, 0, 0, root))
-  } else if (look === 'box') {
-    meshes.push(box(0.36, 0.28, 0.3, '#c7a46b', 0, 0, 0, root))
-    meshes.push(plane(0.26, 0.26, stickerMat(emoji), 0, 0.0, 0.152, 0, 0, root))
-  } else {
-    const s = stickerSprite(emoji, item.id); s.scale.setScalar(0.5 * Math.min(1.1, 0.45 + 0.11 * dist)); root.add(s); meshes.push(s)
-  }
-  meshes.forEach((m) => { m.userData.pick = { type: 'item', item }; m.userData.root = root })
-  return { root, meshes }
+// Tappable furniture: name -> [centre, size]. Memories kept there are listed in a dialog instead of lying around.
+const HITS = {
+  Kitchen: { Refrigerator: [[-2.8, 1.1, -2.0], [1.0, 2.2, 0.7]], Counter: [[0.9, 1.2, -2.25], [4.4, 0.5, 0.9]], Cupboards: [[0.7, 0.45, -2.0], [5.0, 0.9, 0.12]], 'Pantry shelf': [[2.85, 2.05, -2.45], [1.9, 1.0, 0.5]], Table: [[0.3, 0.8, -0.5], [1.5, 0.5, 1.5]] },
+  Garage: { Car: [[0.1, 0.8, -1.3], [2.3, 1.3, 1.1]], Workbench: [[3.0, 0.7, -0.8], [0.9, 0.9, 2.4]], Pegboard: [[3.4, 1.95, -0.8], [0.2, 1.3, 2.4]], 'Garage door': [[0, 1.5, -2.62], [3.8, 2.3, 0.2]], Shelf: [[-3.2, 1.75, -1.2], [0.6, 0.5, 1.9]], Tires: [[-2.9, 0.4, -1.8], [0.8, 0.9, 0.8]] },
+  Study: { Bookshelf: [[-2.15, 1.3, -2.55], [2.4, 2.6, 0.5]], Desk: [[0.5, 0.5, -2.15], [2.2, 1.0, 0.9]], 'Picture frame': [[0.5, 1.9, -2.6], [0.9, 0.7, 0.15]], Window: [[2.4, 1.7, -2.65], [1.2, 1.3, 0.15]], Rug: [[0.6, 0.05, -0.4], [3.5, 0.1, 2.4]] },
+  Office: { Whiteboard: [[-2.0, 1.85, -2.65], [2.2, 1.2, 0.15]], Desk: [[1.2, 0.45, -2.15], [2.5, 0.95, 0.9]], 'Wall clock': [[1.2, 2.3, -2.65], [0.7, 0.7, 0.15]], 'Filing cabinet': [[-0.45, 0.65, -2.4], [0.75, 1.3, 0.65]], Monitor: [[1.2, 1.3, -2.3], [1.0, 0.6, 0.2]], Plant: [[3.0, 0.7, -2.4], [0.6, 1.4, 0.6]] },
+  Library: { 'Left bookcase': [[-2.2, 1.3, -2.55], [2.5, 2.6, 0.5]], 'Right bookcase': [[2.2, 1.3, -2.55], [2.5, 2.6, 0.5]], Armchair: [[0, 0.5, -1.5], [1.4, 1.0, 1.1]], Window: [[0, 1.5, -2.65], [1.5, 2.2, 0.15]] },
+  Workshop: { Pegboard: [[-0.6, 1.9, -2.65], [3.8, 1.6, 0.15]], Workbench: [[-0.6, 0.5, -2.3], [3.4, 1.0, 0.8]], Shelf: [[2.6, 1.9, -2.5], [1.9, 0.6, 0.5]], 'Tool chest': [[2.6, 0.5, -2.3], [1.1, 1.0, 0.6]], Sawhorse: [[0, 0.45, 0.8], [1.0, 0.9, 0.4]] },
+  Bathroom: { Bathtub: [[-2.9, 0.3, -1.2], [1.0, 0.6, 2.2]], Vanity: [[0.6, 0.45, -2.45], [1.4, 0.9, 0.55]], Mirror: [[0.6, 1.9, -2.7], [1.0, 1.1, 0.1]], Toilet: [[2.8, 0.45, -2.3], [0.7, 0.9, 0.7]], Window: [[1.9, 1.9, -2.7], [1.1, 1.0, 0.1]], 'Towel rail': [[-1.4, 1.4, -2.65], [1.0, 0.7, 0.1]] },
+  Garden: { Tree: [[-3.3, 1.8, -2.4], [2.6, 3.6, 2.6]], Fence: [[0, 0.6, -4.2], [12, 1.2, 0.2]], 'Flower bed': [[0, 0.3, -1.3], [4.8, 0.6, 1.2]], Lawn: [[0, 0.05, 1.0], [6, 0.1, 3]] },
+  Shed: { 'Top shelf': [[1.9, 2.2, -2.5], [2.9, 0.5, 0.5]], 'Lower shelf': [[1.9, 1.6, -2.5], [2.9, 0.5, 0.5]], 'Tool wall': [[-2.7, 1.3, -2.6], [1.2, 2.4, 0.2]], Workbench: [[-0.1, 0.5, -1.9], [2.2, 1.0, 0.7]], Floor: [[2.4, 0.3, 0.3], [1.3, 0.6, 0.9]] },
+  Generic: { Desk: [[-1.0, 0.5, -2.2], [2.2, 1.0, 0.9]], Window: [[1.8, 1.7, -2.7], [1.3, 1.2, 0.1]], Floor: [[0, 0.05, 0.6], [4, 0.1, 2]] },
+}
+const WALL_Z = [2.0, 1.15, 0.4], WALL_Y = [1.95, 1.25]
+const BOX_SPOTS = [[-3.05, 1.9], [-3.05, 1.3], [-3.05, 0.7], [-3.05, 0.1], [3.05, 1.9], [3.05, 1.3], [3.05, 0.7], [3.05, 0.1]]
+
+function badge(g, n, x, y, z) {
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: badgeTex(n), transparent: true, depthTest: false }))
+  s.scale.set(0.42, 0.42, 1); s.position.set(x, y, z); s.renderOrder = 10; g.add(s)
 }
 
-// room = {name, theme}; items = [{item, emoji}] where item has id and spot.
-export function buildRoom(room, items, ctx = {}) {
+// A hanging picture: the memory's sticker in a wooden frame.
+function frame(g, picks, item, emoji, side, index) {
+  const z = WALL_Z[index % 3], y = WALL_Y[Math.floor(index / 3)]
+  const root = new THREE.Group(); root.position.set(side * (HW - 0.05), y, z); root.rotation.y = side < 0 ? LEFT : RIGHT; g.add(root)
+  const f = box(0.56, 0.56, 0.05, DARK, 0, 0, 0, root); box(0.46, 0.46, 0.02, '#efe8da', 0, 0, 0.03, root)
+  const art = plane(0.34, 0.34, stickerMat(emoji), 0, 0, 0.045, 0, 0, root)
+  ;[f, art].forEach((m) => { m.userData.pick = { type: 'item', item }; picks.push(m) })
+}
+
+// A small storage box with a name label and a count.
+function storageBox(g, picks, b, count, index) {
+  const [x, z] = BOX_SPOTS[index % BOX_SPOTS.length], side = x < 0 ? -1 : 1
+  const root = new THREE.Group(); root.position.set(x, 0.19, z); root.rotation.y = side < 0 ? LEFT : RIGHT; g.add(root)
+  const body = box(0.5, 0.38, 0.5, '#c7a46b', 0, 0, 0, root); box(0.52, 0.04, 0.52, '#b08d4f', 0, 0.2, 0, root)
+  const tag = plane(0.4, 0.1, new THREE.MeshBasicMaterial({ map: labelTex(b.name.slice(0, 16), '#f1ebdd'), transparent: true }), 0, 0.02, 0.255, 0, 0, root)
+  ;[body, tag].forEach((m) => { m.userData.pick = { type: 'box', id: b.id }; picks.push(m) })
+  badge(g, count, x * 0.97, 0.62, z)
+}
+
+// data = { items: [{item, emoji}], boxes: [{id, name}] }
+export function buildRoom(room, data, ctx = {}) {
   const g = new THREE.Group(), picks = []
   const make = ROOMS[room.name] || ROOMS.Generic
-  const spots = make(g, room.theme ? lighten(room.theme) : '#d9cbb2', { picks, shedId: ctx.shedId })
+  make(g, room.theme ? lighten(room.theme) : '#d9cbb2', { picks, shedId: ctx.shedId })
   const garden = room.name === 'Garden'
-  const cam = garden ? GARDEN_CAM : ROOM_CAM
-  const placed = assignSpots(room.name, items.map((i) => i.item))
-  items.forEach((it) => {
-    const si = placed.get(it.item.id)
-    if (si === undefined || !spots[si]) return
-    const d = Math.hypot(spots[si][0] - cam.pos[0], spots[si][1] - cam.pos[1], spots[si][2] - cam.pos[2])
-    const { root, meshes } = itemObject(lookOf(room.name, si), it.emoji, it.item, spots[si], d)
-    root.userData.spot = si; g.add(root); picks.push(...meshes)
+  const emoji = new Map((data?.items || []).map((i) => [i.item.id, i.emoji]))
+  const boxes = data?.boxes || []
+  const lay = layoutRoom(room.name, (data?.items || []).map((i) => i.item), boxes)
+  // furniture you can tap, with a count badge when it holds memories
+  const hits = HITS[room.name] || HITS.Generic
+  Object.entries(hits).forEach(([name, [c, sz]]) => {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(...sz), invisible()); m.position.set(...c); m.userData.pick = { type: 'place', name }; g.add(m); picks.push(m)
+    const n = lay.by[name]?.length || 0
+    if (n) badge(g, n, c[0], c[1] + sz[1] / 2 + 0.2, c[2] + sz[2] / 2 + 0.15)
   })
-  // faint rings that show where an item can be dropped while dragging
-  const markers = new THREE.Group(); markers.visible = false
-  const rm = new THREE.SpriteMaterial({ map: ringTex(), transparent: true, depthTest: false })
-  spots.forEach((p) => { const s = new THREE.Sprite(rm.clone()); s.position.set(p[0], p[1], p[2]); s.scale.set(0.55, 0.55, 1); s.renderOrder = 5; markers.add(s) })
-  g.add(markers)
-  return { group: g, picks, cam, spots: spots.map((p) => new THREE.Vector3(p[0], p[1], p[2])), markers, canDrag: true, bg: garden ? gradTex('#7fa6c9', '#e8cfa3') : new THREE.Color('#1a1410') }
+  lay.left.forEach((it, i) => frame(g, picks, it, emoji.get(it.id), -1, i))
+  lay.right.forEach((it, i) => frame(g, picks, it, emoji.get(it.id), 1, i))
+  boxes.forEach((b, i) => storageBox(g, picks, b, lay.boxes[b.id].length, i))
+  return { group: g, picks, cam: garden ? GARDEN_CAM : ROOM_CAM, bg: garden ? gradTex('#7fa6c9', '#e8cfa3') : new THREE.Color('#1a1410') }
 }
 
 function lighten(hex) { return '#' + new THREE.Color(hex).lerp(new THREE.Color('#ffffff'), 0.22).getHexString() }
