@@ -177,3 +177,14 @@ main.palace{display:flex;flex-direction:column;overflow:hidden;padding:8px 12px 
 .three-wrap{position:absolute;inset:0}.three-fade{position:absolute;inset:0;background:#0f0b08;opacity:0;pointer-events:none}
 .lookbar{position:absolute;left:0;right:0;bottom:10px;display:flex;justify-content:center;gap:8px;pointer-events:none}
 .lookbar button{pointer-events:auto;background:#000a;color:#fff;border-radius:99px;padding:8px 14px;font-weight:600;font-size:14px}
+
+/* ---------- first-visit tour ---------- */
+.tourwrap{position:fixed;inset:0;background:#0009;display:flex;align-items:center;justify-content:center;z-index:20;padding:16px}
+.tour{width:100%;max-width:420px;margin:0;text-align:center;position:relative;padding:28px 22px 18px}
+.tour h2{font-size:26px;margin:6px 0 10px}.tour h2:focus{outline:none}
+.tskip{position:absolute;top:12px;right:14px;color:var(--mut);font-weight:600;padding:6px 8px}
+.tart{display:flex;justify-content:center;align-items:center;gap:6px;min-height:92px;margin-bottom:6px}
+.tbody{color:var(--mut);text-align:left;min-height:112px;font-size:16px}.tbody p{margin:0 0 12px;color:var(--mut)}.tbody b{color:var(--ink)}
+.tsteps{margin:0;padding-left:22px}.tsteps li{margin:8px 0}
+.tdots{display:flex;gap:6px;justify-content:center;margin:12px 0}.tdots i{width:7px;height:7px;border-radius:50%;background:var(--line)}.tdots i.on{background:var(--teal);width:20px;border-radius:4px}
+.tnav{display:flex;gap:10px;justify-content:space-between}.tnav .btn{flex:1}.tcount{margin:10px 0 0;color:var(--mut);font-size:13px}

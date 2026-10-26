@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js'
 export { THREE }
 
 // ---- shared geometry / material caches (many rooms reuse the same boxes) ----
@@ -6,9 +7,15 @@ const geos = new Map(), mats = new Map()
 const geo = (k, make) => { if (!geos.has(k)) geos.set(k, make()); return geos.get(k) }
 export const mat = (color, o = {}) => {
   const k = color + JSON.stringify(o)
-  if (!mats.has(k)) mats.set(k, new THREE.MeshLambertMaterial({ color, ...o }))
+  if (!mats.has(k)) mats.set(k, new THREE.MeshStandardMaterial({ color, roughness: 0.78, metalness: 0, ...o }))
   return mats.get(k)
 }
+// textured surfaces (floors, walls)
+export const texMat = (o) => new THREE.MeshStandardMaterial({ roughness: 0.85, metalness: 0, ...o })
+// finishes that catch the light differently
+export const metal = (color) => mat(color, { metalness: 0.75, roughness: 0.32 })
+export const gloss = (color) => mat(color, { roughness: 0.22 })
+export const glassMat = (color = '#cfe3ea') => mat(color, { roughness: 0.05, metalness: 0.2 })
 export const glow = (color) => {
   const k = 'glow' + color
   if (!mats.has(k)) mats.set(k, new THREE.MeshBasicMaterial({ color }))
@@ -17,19 +24,24 @@ export const glow = (color) => {
 const asMat = (c) => (typeof c === 'string' ? mat(c) : c)
 
 export function box(w, h, d, color, x = 0, y = 0, z = 0, p) {
-  const m = new THREE.Mesh(geo(`b${w},${h},${d}`, () => new THREE.BoxGeometry(w, h, d)), asMat(color))
+  const small = Math.min(w, h, d)
+  const m = new THREE.Mesh(geo(`b${w},${h},${d}`, () => (small > 0.06 ? new RoundedBoxGeometry(w, h, d, 2, Math.min(0.022, small * 0.22)) : new THREE.BoxGeometry(w, h, d))), asMat(color))
+  m.castShadow = true; m.receiveShadow = true
   m.position.set(x, y, z); p?.add(m); return m
 }
 export function cyl(rt, rb, h, color, x = 0, y = 0, z = 0, p, seg = 20) {
   const m = new THREE.Mesh(geo(`c${rt},${rb},${h},${seg}`, () => new THREE.CylinderGeometry(rt, rb, h, seg)), asMat(color))
+  m.castShadow = true; m.receiveShadow = true
   m.position.set(x, y, z); p?.add(m); return m
 }
 export function sph(r, color, x = 0, y = 0, z = 0, p, seg = 16) {
   const m = new THREE.Mesh(geo(`s${r},${seg}`, () => new THREE.SphereGeometry(r, seg, seg)), asMat(color))
+  m.castShadow = true; m.receiveShadow = true
   m.position.set(x, y, z); p?.add(m); return m
 }
 export function plane(w, h, material, x = 0, y = 0, z = 0, rx = 0, ry = 0, p) {
   const m = new THREE.Mesh(geo(`p${w},${h}`, () => new THREE.PlaneGeometry(w, h)), asMat(material))
+  m.receiveShadow = true
   m.position.set(x, y, z); m.rotation.set(rx, ry, 0); p?.add(m); return m
 }
 
@@ -45,22 +57,45 @@ export function canvasTex(w, h, draw, repeat) {
 const tcache = new Map()
 const cached = (k, make) => { if (!tcache.has(k)) tcache.set(k, make()); return tcache.get(k) }
 
-export const checkerTex = (a, b, rx, ry) => cached(`ck${a}${b}${rx}${ry}`, () => canvasTex(128, 128, (g) => {
-  g.fillStyle = a; g.fillRect(0, 0, 128, 128); g.fillStyle = b; g.fillRect(0, 0, 64, 64); g.fillRect(64, 64, 64, 64)
+// fine speckle so flat colours do not look like plastic
+const speckle = (g, w, h, n, a = 0.06) => { for (let i = 0; i < n; i++) { g.fillStyle = Math.random() < 0.5 ? `rgba(0,0,0,${a})` : `rgba(255,255,255,${a})`; g.fillRect(Math.random() * w, Math.random() * h, 1 + Math.random() * 2, 1 + Math.random() * 2) } }
+const tint = (hex, k) => '#' + new THREE.Color(hex).offsetHSL(0, 0, k).getHexString()
+export const checkerTex = (a, b, rx, ry) => cached(`ck${a}${b}${rx}${ry}`, () => canvasTex(256, 256, (g) => {
+  for (let y = 0; y < 2; y++) for (let x = 0; x < 2; x++) { g.fillStyle = (x + y) % 2 ? b : a; g.fillRect(x * 128, y * 128, 128, 128); g.fillStyle = `rgba(255,255,255,${0.05 + Math.random() * 0.05})`; g.fillRect(x * 128, y * 128, 128, 64) }
+  g.strokeStyle = 'rgba(0,0,0,.28)'; g.lineWidth = 3; g.strokeRect(0, 0, 256, 256); g.beginPath(); g.moveTo(128, 0); g.lineTo(128, 256); g.moveTo(0, 128); g.lineTo(256, 128); g.stroke()
+  speckle(g, 256, 256, 500)
 }, [rx, ry]))
-export const plankTex = (a, b, rx, ry) => cached(`pl${a}${b}${rx}${ry}`, () => canvasTex(256, 256, (g) => {
-  for (let i = 0; i < 8; i++) { g.fillStyle = i % 2 ? a : b; g.fillRect(0, i * 32, 256, 32); g.strokeStyle = '#0004'; g.strokeRect(0, i * 32, 256, 32) }
+export const plankTex = (a, b, rx, ry) => cached(`pl${a}${b}${rx}${ry}`, () => canvasTex(512, 512, (g) => {
+  for (let i = 0; i < 8; i++) {
+    const y = i * 64, c = i % 2 ? a : b
+    g.fillStyle = tint(c, (Math.random() - 0.5) * 0.06); g.fillRect(0, y, 512, 64)
+    for (let k = 0; k < 14; k++) { g.strokeStyle = `rgba(40,20,5,${0.05 + Math.random() * 0.08})`; g.lineWidth = 1 + Math.random(); g.beginPath(); const gy = y + 4 + Math.random() * 56; g.moveTo(0, gy); g.bezierCurveTo(150, gy + (Math.random() - 0.5) * 6, 330, gy + (Math.random() - 0.5) * 6, 512, gy); g.stroke() }
+    g.fillStyle = 'rgba(0,0,0,.4)'; g.fillRect(0, y, 512, 3); g.fillStyle = 'rgba(255,255,255,.08)'; g.fillRect(0, y + 3, 512, 2)
+    const jx = (i * 173) % 512; g.fillStyle = 'rgba(0,0,0,.35)'; g.fillRect(jx, y, 3, 64)
+  }
 }, [rx, ry]))
-export const tileTex = (a, line, rx, ry) => cached(`tl${a}${line}${rx}${ry}`, () => canvasTex(128, 128, (g) => {
-  g.fillStyle = a; g.fillRect(0, 0, 128, 128); g.strokeStyle = line; g.lineWidth = 3; g.strokeRect(0, 0, 128, 128)
+export const tileTex = (a, line, rx, ry) => cached(`tl${a}${line}${rx}${ry}`, () => canvasTex(256, 256, (g) => {
+  g.fillStyle = a; g.fillRect(0, 0, 256, 256)
+  for (let y = 0; y < 2; y++) for (let x = 0; x < 2; x++) { g.fillStyle = tint(a, (Math.random() - 0.5) * 0.04); g.fillRect(x * 128 + 3, y * 128 + 3, 122, 122); g.fillStyle = 'rgba(255,255,255,.1)'; g.fillRect(x * 128 + 3, y * 128 + 3, 122, 50) }
+  g.strokeStyle = line; g.lineWidth = 5; g.strokeRect(0, 0, 256, 256); g.beginPath(); g.moveTo(128, 0); g.lineTo(128, 256); g.moveTo(0, 128); g.lineTo(256, 128); g.stroke()
+  speckle(g, 256, 256, 400, 0.05)
 }, [rx, ry]))
-export const brickTex = (rx, ry) => cached(`br${rx}${ry}`, () => canvasTex(128, 64, (g) => {
-  g.fillStyle = '#8a6650'; g.fillRect(0, 0, 128, 64); g.strokeStyle = '#6f503d'; g.lineWidth = 2
-  for (let r = 0; r < 4; r++) { const y = r * 16; g.beginPath(); g.moveTo(0, y); g.lineTo(128, y); g.stroke(); const o = r % 2 ? 0 : 32; for (let x = o; x < 128; x += 64) { g.beginPath(); g.moveTo(x, y); g.lineTo(x, y + 16); g.stroke() } }
+export const brickTex = (rx, ry) => cached(`br${rx}${ry}`, () => canvasTex(256, 128, (g) => {
+  g.fillStyle = '#5b4436'; g.fillRect(0, 0, 256, 128)
+  for (let r = 0; r < 8; r++) for (let c = 0; c < 5; c++) {
+    const x = c * 64 + (r % 2 ? 32 : 0) - 32, y = r * 16, t = (Math.random() - 0.5) * 0.08
+    g.fillStyle = tint('#8a6650', t); g.fillRect(x + 2, y + 2, 60, 12); g.fillStyle = 'rgba(255,255,255,.07)'; g.fillRect(x + 2, y + 2, 60, 3)
+  }
+  speckle(g, 256, 128, 500, 0.08)
 }, [rx, ry]))
-export const stripeTex = (c) => cached(`st${c}`, () => canvasTex(64, 8, (g) => {
-  g.fillStyle = c; g.fillRect(0, 0, 64, 8); g.fillStyle = 'rgba(0,0,0,.07)'; g.fillRect(30, 0, 4, 8)
-}, [14, 1]))
+export const stripeTex = (c) => cached(`st${c}`, () => canvasTex(128, 128, (g) => {
+  g.fillStyle = c; g.fillRect(0, 0, 128, 128); g.fillStyle = 'rgba(0,0,0,.05)'; g.fillRect(60, 0, 8, 128); g.fillStyle = 'rgba(255,255,255,.04)'; g.fillRect(68, 0, 4, 128)
+  speckle(g, 128, 128, 600, 0.035)
+}, [14, 3]))
+export const grassTex = (rx, ry) => cached(`gs${rx}${ry}`, () => canvasTex(256, 256, (g) => {
+  g.fillStyle = '#5d8a4e'; g.fillRect(0, 0, 256, 256)
+  for (let i = 0; i < 2600; i++) { g.strokeStyle = `hsla(${88 + Math.random() * 30},${35 + Math.random() * 20}%,${28 + Math.random() * 22}%,.55)`; g.lineWidth = 1; const x = Math.random() * 256, y = Math.random() * 256; g.beginPath(); g.moveTo(x, y); g.lineTo(x + (Math.random() - 0.5) * 3, y - 3 - Math.random() * 4); g.stroke() }
+}, [rx, ry]))
 export const gradTex = (top, bottom) => cached(`gr${top}${bottom}`, () => canvasTex(4, 256, (g, w, h) => {
   const gr = g.createLinearGradient(0, 0, 0, h); gr.addColorStop(0, top); gr.addColorStop(1, bottom); g.fillStyle = gr; g.fillRect(0, 0, w, h)
 }))

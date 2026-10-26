@@ -3,6 +3,7 @@ import { useAuth } from './hooks/useAuth'
 import { fetchCategories } from './services/cards'
 import { fetchRooms } from './services/palace'
 import Onboarding from './components/Onboarding'
+import Tour, { tourSeen } from './components/Tour'
 import Nav from './components/Nav'
 import Header from './components/Header'
 import OfflineBanner from './components/OfflineBanner'
@@ -27,6 +28,8 @@ export default function App() {
   const [cat, setCat] = useState(null)
   const [dir, setDir] = useState('')
   const [content, setContent] = useState(null)
+  const [tour, setTour] = useState(() => !tourSeen())
+  useEffect(() => { const again = () => setTour(true); window.addEventListener('mp-tour', again); return () => window.removeEventListener('mp-tour', again) }, [])
 
   const goTab = useCallback((id) => {
     setTab((cur) => { if (cur === id) return cur; setDir(TAB_ORDER.indexOf(id) > TAB_ORDER.indexOf(cur) ? 'fromR' : 'fromL'); return id })
@@ -72,6 +75,7 @@ export default function App() {
             </div>
           </div>
           <Nav tab={tab} onChange={goTab} />
+          {tour && <Tour signedIn={!!user} onClose={() => setTour(false)} />}
         </div>
       </Streak>
     </AuthPromptProvider>

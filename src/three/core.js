@@ -1,14 +1,19 @@
 import { THREE } from './kit'
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
 
 const ease = (t) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2)
 
 // Owns the WebGL canvas: drawing on demand, look-around / orbit drag, tap picking and smooth camera flights.
 export class Stage {
-  constructor(host, onPick, onFade) {
+  constructor(host, onPick, onFade, quality = {}) {
     this.host = host; this.onPick = onPick; this.onFade = onFade
     const r = (this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'low-power' }))
-    r.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2))
+    r.setPixelRatio(Math.min(window.devicePixelRatio || 1, quality.pixelRatio ?? 2))
     r.outputColorSpace = THREE.SRGBColorSpace
+    r.toneMapping = THREE.ACESFilmicToneMapping; r.toneMappingExposure = 0.92
+    r.shadowMap.enabled = quality.shadows !== false; r.shadowMap.type = THREE.PCFSoftShadowMap
+    // soft, even light bouncing around the room (reflections and ambient)
+    const pm = new THREE.PMREMGenerator(r); this.env = pm.fromScene(new RoomEnvironment(), 0.04).texture; pm.dispose()
     r.domElement.style.cssText = 'display:block;width:100%;height:100%;touch-action:none;outline:none'
     host.appendChild(r.domElement)
     this.scene = new THREE.Scene()
@@ -35,6 +40,7 @@ export class Stage {
     if (this.group) this.scene.remove(this.group)
     this.group = view.group; this.scene.add(view.group)
     this.scene.background = view.bg || null
+    this.scene.environment = this.env; this.scene.environmentIntensity = view.envI ?? 0.5
     this.picks = view.picks || []; this.cam = view.cam
     this.rtsCur.forEach((rt) => rt.dispose()); this.rtsCur = this.rtsNext; this.rtsNext = []
     if (!keepLook) { this.da = 0; this.dp = 0; this.az = view.cam.az ?? 0; this.el = view.cam.el ?? 0.2 }
@@ -100,7 +106,7 @@ export class Stage {
   // Draw a view into a texture. Used for the picture you see through a door as it opens.
   preview(group, cam, aspect = 0.46) {
     const w = 220, h = Math.round(w / aspect), rt = new THREE.WebGLRenderTarget(w, h)
-    const sc = new THREE.Scene(); sc.background = new THREE.Color('#1a1410'); sc.add(group)
+    const sc = new THREE.Scene(); sc.background = new THREE.Color('#1a1410'); sc.environment = this.env; sc.environmentIntensity = 0.32; sc.add(group)
     const pc = new THREE.PerspectiveCamera(60, aspect, 0.05, 100); pc.position.set(...cam.pos); pc.lookAt(...cam.target)
     const prev = this.renderer.getRenderTarget()
     this.renderer.setRenderTarget(rt); this.renderer.render(sc, pc); this.renderer.setRenderTarget(prev)

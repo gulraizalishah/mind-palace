@@ -1,4 +1,4 @@
-import { THREE, box, cyl, sph, plane, mat, glow, brickTex, checkerTex, plankTex, gradTex, glowTex, labelTex, hitArea } from './kit'
+import { THREE, texMat, metal, gloss, glassMat, grassTex, box, cyl, sph, plane, mat, glow, brickTex, checkerTex, plankTex, gradTex, glowTex, labelTex, hitArea } from './kit'
 
 const lit = (cnt, r) => (r ? cnt(r.id) > 0 : false)
 const PI = Math.PI
@@ -7,10 +7,11 @@ const PI = Math.PI
 export function buildExterior(floors, cnt, previewHall, ctx = {}) {
   const g = new THREE.Group(), picks = []
   const nF = floors.length, fh = 2.6, HW = 4, HD = 2.6, top = fh * nF
-  g.add(new THREE.HemisphereLight(0xbcd0e8, 0x3d4a3a, 1.0))
-  const sun = new THREE.DirectionalLight(0xffe0b0, 1.1); sun.position.set(6, 10, 9); g.add(sun)
-  box(120, 0.2, 120, '#4a7344', 0, -0.1, 0, g); box(1.7, 0.03, 12, '#cdbf9d', 0, 0.015, HD + 6, g)
-  box(2 * HW, top, 2 * HD, new THREE.MeshLambertMaterial({ map: brickTex(5, 1.6 * nF) }), 0, top / 2, 0, g)
+  g.add(new THREE.HemisphereLight(0xbcd0e8, 0x3d4a3a, 0.65))
+  const sun = new THREE.DirectionalLight(0xffd9a0, 1.6); sun.position.set(9, 14, 12); sun.target.position.set(2, 0, -1); sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048)
+  const sc = sun.shadow.camera; sc.left = -16; sc.right = 16; sc.top = 14; sc.bottom = -12; sc.near = 1; sc.far = 45; sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.04; g.add(sun, sun.target)
+  plane(240, 240, texMat({ map: grassTex(70, 70), color: '#8fa58c' }), 0, 0, 0, -PI / 2, 0, g); box(1.7, 0.03, 12, '#cdbf9d', 0, 0.015, HD + 6, g)
+  box(2 * HW, top, 2 * HD, texMat({ map: brickTex(5, 1.6 * nF) }), 0, top / 2, 0, g)
   const shape = new THREE.Shape(); shape.moveTo(-HW - 0.4, 0); shape.lineTo(HW + 0.4, 0); shape.lineTo(0, 2.1); shape.closePath()
   const roofGeo = new THREE.ExtrudeGeometry(shape, { depth: 2 * HD + 0.8, bevelEnabled: false }); roofGeo.translate(0, 0, -(HD + 0.4))
   const roof = new THREE.Mesh(roofGeo, mat('#323844')); roof.position.y = top; g.add(roof)
@@ -84,7 +85,7 @@ export function buildExterior(floors, cnt, previewHall, ctx = {}) {
   ;[[-24, -26, 14], [-4, -30, 18], [20, -27, 15]].forEach(([x, z, r]) => { const h = sph(r, '#2f4a35', x, -r * 0.55, z, g, 12); h.scale.set(1.6, 0.8, 1) })
   sph(1.2, glow('#f1e8d0'), -16, 15, -22, g, 20)
   return {
-    group: g, picks, bg: gradTex('#232f4a', '#d49a6a'),
+    group: g, picks, bg: gradTex('#232f4a', '#d49a6a'), envI: 0.3,
     cam: { mode: 'orbit', target: [2.4, top * 0.42, 0], r: 9.0 + nF * 1.6, rMin: 6, rMax: 24, az: 0.28, el: 0.16, azMin: -3.2, azMax: 3.2, elMin: 0.03, elMax: 0.85 },
   }
 }
@@ -112,10 +113,10 @@ function hallDoor(g, picks, room, side, z, n, tex) {
 export function buildHall(floor, idx, total, cnt, previewRoom) {
   const g = new THREE.Group(), picks = []
   const zEnd = -HL / 2
-  g.add(new THREE.AmbientLight(0xfff4e0, 0.8))
-  const p1 = new THREE.PointLight(0xffe4a1, 1.1, 16); p1.position.set(0, HH - 0.9, 0); g.add(p1)
+  g.add(new THREE.AmbientLight(0xfff4e0, 0.45))
+  const p1 = new THREE.PointLight(0xffe4a1, 1.6, 16); p1.position.set(0, HH - 0.9, 0); g.add(p1)
   const p2 = new THREE.PointLight(0xffe4a1, 0.7, 12); p2.position.set(0, HH - 0.9, 4.5); g.add(p2)
-  const floorMat = new THREE.MeshLambertMaterial({ map: idx === 0 ? checkerTex('#e6e0d2', '#2f343d', 2, 10) : plankTex('#8a6446', '#7c5a3e', 2, 6) })
+  const floorMat = texMat({ map: idx === 0 ? checkerTex('#e6e0d2', '#2f343d', 2, 10) : plankTex('#8a6446', '#7c5a3e', 2, 6) })
   plane(2 * HW_, HL, floorMat, 0, 0, 0, -PI / 2, 0, g)
   plane(2 * HW_, HL, mat('#e3dccd'), 0, HH, 0, PI / 2, 0, g)
   for (let z = 5; z > zEnd; z -= 2.6) box(2 * HW_, 0.16, 0.24, '#b9ae97', 0, HH - 0.08, z, g)
@@ -157,5 +158,5 @@ export function buildHall(floor, idx, total, cnt, previewRoom) {
     hitArea(1.9, 1.5, cx, 0.7, z1 + 0.15, 0, down, g, picks)
     plane(1.3, 0.32, new THREE.MeshBasicMaterial({ map: labelTex('↓ Downstairs'), transparent: true }), cx, 1.25, z1 + 0.06, 0, 0, g)
   }
-  return { group: g, picks, bg: new THREE.Color('#120d0a'), cam: { mode: 'look', pos: [0, 1.6, 6.2], target: [0, 1.45, -6], yaw: 0.9, pitch: 0.4, hfov: 80 }, previewCam: { pos: [0, 1.55, 6.2], target: [0, 1.45, -6] } }
+  return { group: g, picks, bg: new THREE.Color('#120d0a'), envI: 0.35, cam: { mode: 'look', pos: [0, 1.6, 6.2], target: [0, 1.45, -6], yaw: 0.9, pitch: 0.4, hfov: 80 }, previewCam: { pos: [0, 1.55, 6.2], target: [0, 1.45, -6] } }
 }

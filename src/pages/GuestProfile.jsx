@@ -1,5 +1,6 @@
 import { useAuthPrompt } from '../hooks/useAuthPrompt'
 import ThemeSetting from '../components/ThemeToggle'
+import QualitySetting from '../components/QualitySetting'
 import InstallCard from '../components/InstallCard'
 
 export default function GuestProfile() {
@@ -11,8 +12,11 @@ export default function GuestProfile() {
       <button className="btn" onClick={() => askLogin('Log in or create an account')}>Log in or create an account</button>
       <div style={{ height: 28 }} />
       <InstallCard />
+      <button className="ghost" style={{ marginTop: 0, marginBottom: 12 }} onClick={() => window.dispatchEvent(new Event('mp-tour'))}>Take the tour again</button>
       <h3>Appearance</h3>
       <ThemeSetting />
+      <h3 style={{ marginTop: 20 }}>3D palace detail</h3>
+      <QualitySetting />
     </main>
   )
 }

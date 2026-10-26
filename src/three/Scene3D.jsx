@@ -2,6 +2,7 @@ import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react'
 import { Stage } from './core'
 import { buildExterior, buildHall } from './house'
 import { buildRoom } from './rooms'
+import { resolveQuality } from '../lib/quality'
 
 // The 3D palace. Draws whichever view is chosen (outside, a hall, or a room) and reports taps.
 // view: {t:'out'} | {t:'hall', f} | {t:'room', id}
@@ -26,7 +27,7 @@ const Scene3D = forwardRef(function Scene3D({ view, floors, rooms, items, boxes,
         if (pick.type === 'place') return cb.current.onPlace(pick.name)
         if (pick.type === 'box') return cb.current.onBox(pick.id)
         st.transition(pick, () => { entering.current = true; cb.current.onGo(pick.token) })
-      }, setFade)
+      }, setFade, resolveQuality())
     } catch (e) { onFail?.(e); return }
     stage.current = st
     if (import.meta.env.DEV) window.__st = st

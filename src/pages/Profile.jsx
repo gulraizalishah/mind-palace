@@ -5,6 +5,7 @@ import { saveTopics } from '../services/prefs'
 import { lifeStats } from '../services/review'
 import TopicChips from '../components/TopicChips'
 import ThemeSetting from '../components/ThemeToggle'
+import QualitySetting from '../components/QualitySetting'
 import InstallCard from '../components/InstallCard'
 import { useStreak } from '../hooks/useStreak'
 
@@ -36,8 +37,11 @@ export default function Profile({ categories }) {
       <InstallCard />
       <h3>Appearance</h3>
       <ThemeSetting />
+      <h3 style={{ marginTop: 20 }}>3D palace detail</h3>
+      <QualitySetting />
       <h3 style={{ marginTop: 24 }}>Topics</h3>
       <TopicChips categories={categories} selected={selected} onToggle={toggle} />
+      <button className="ghost" style={{ marginTop: 0, marginBottom: 12 }} onClick={() => window.dispatchEvent(new Event('mp-tour'))}>Take the tour again</button>
       <button className="ghost" onClick={signOut}>Log out</button>
     </main>
   )
